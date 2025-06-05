@@ -124,10 +124,6 @@ def download_episode(episode_url, episode_title, novel_title, index):
     with open(en_path, "w", encoding="utf-8") as f:
         f.write(f"{episode_title}\n\n{translated_body}")
 
-    if (index + 1) % 300 == 0:
-        print(f"{index + 1}話ダウンロード完了。30秒の休憩を取ります...")
-        time.sleep(30)
-
 
 def download_novels(urls, history):
     for novel_url in urls:
@@ -138,17 +134,23 @@ def download_novels(urls, history):
 
             episode_links = get_episode_links(novel_url)
             download_from = history.get(novel_url, 0)
-            new_max = download_from
 
             for i, (episode_url, episode_title) in enumerate(episode_links):
-                if i + 1 <= download_from:
+                episode_number = i + 1
+                if episode_number <= download_from:
                     continue
 
-                print(f"{i + 1:03d}_{episode_title} downloading & translating...")
+                print(f"{episode_number:03d}_{episode_title} downloading & translating...")
                 download_episode(episode_url, episode_title, novel_title, i)
-                new_max = i + 1
 
-            history[novel_url] = new_max
+                # 履歴を即時更新
+                history[novel_url] = episode_number
+                save_history(history)
+
+                # 300話ごとに休憩
+                if episode_number % 300 == 0:
+                    print(f"{episode_number}話ダウンロード完了。30秒の休憩を取ります...")
+                    time.sleep(30)
 
         except Exception as e:
             print(f"エラー発生: {novel_url} → {e}")
