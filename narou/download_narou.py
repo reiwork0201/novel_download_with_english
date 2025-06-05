@@ -19,7 +19,6 @@ def fetch_url(url):
 def load_history():
     if not os.path.exists(LOCAL_HISTORY_PATH):
         subprocess.run(['rclone', 'copyto', REMOTE_HISTORY_PATH, LOCAL_HISTORY_PATH], check=False)
-
     history = {}
     if os.path.exists(LOCAL_HISTORY_PATH):
         with open(LOCAL_HISTORY_PATH, 'r', encoding='utf-8') as f:
@@ -57,6 +56,7 @@ def translate_text(japanese_text):
     except Exception as e:
         return f"[Translation failed: {e}]"
 
+# URL一覧の読み込み
 script_dir = os.path.dirname(__file__)
 url_file_path = os.path.join(script_dir, '小説家になろう.txt')
 with open(url_file_path, 'r', encoding='utf-8') as f:
@@ -64,14 +64,13 @@ with open(url_file_path, 'r', encoding='utf-8') as f:
 
 history = load_history()
 
-download_count = 0
-
 for novel_url in urls:
     try:
         print(f'\n--- 処理開始: {novel_url} ---')
         url = novel_url
         sublist = []
 
+        # ページ分割対応
         while True:
             res = fetch_url(url)
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -91,6 +90,7 @@ for novel_url in urls:
         base_path = f'/tmp/narou_dl/{title_text}'
         sub_len = len(sublist)
         new_max = download_from
+        download_count = 0
 
         for i, sub in enumerate(sublist):
             file_index = i + 1
@@ -111,6 +111,7 @@ for novel_url in urls:
             file_path_jp = os.path.join(jp_path, file_name)
             file_path_en = os.path.join(en_path, file_name)
 
+            # 本文取得＆保存
             res = fetch_url(f'{BASE_URL}{link}')
             soup = BeautifulSoup(res.text, 'html.parser')
             sub_body = soup.select_one('.p-novel__body')
@@ -126,21 +127,32 @@ for novel_url in urls:
                 f.write(full_text_en)
 
             print(f'{file_name} saved in {folder_name} (japanese & english) ({file_index}/{sub_len})')
+
+            # ✅ 各話ごとに履歴保存
             new_max = file_index
             history[novel_url] = new_max
-            save_history(history)  # 各話ごとに履歴保存
+            save_history(history)
+
             download_count += 1
 
-            # 10話ごとにアップロード
+            # ✅ 10話ごとにアップロード
             if download_count % 10 == 0:
-                print(f'\n--- 10話ごとにアップロード: {download_count}話完了 ---')
-                subprocess.run(['rclone', 'copy', '/tmp/narou_dl', 'drive:', '--transfers=4', '--checkers=8', '--fast-list'], check=True)
+                print(f'\n--- 10話ごとにDriveへアップロード中 ({download_count}話目) ---')
+                subprocess.run([
+                    'rclone', 'copy',
+                    base_path, f'drive:{title_text}',
+                    '--transfers=4', '--checkers=8', '--fast-list'
+                ], check=True)
+
+        # ✅ 残り話（10未満）をアップロード
+        if download_count % 10 != 0:
+            print(f'\n--- 最終アップロード: 残りの話をDriveにアップロード中 ({download_count}話) ---')
+            subprocess.run([
+                'rclone', 'copy',
+                base_path, f'drive:{title_text}',
+                '--transfers=4', '--checkers=8', '--fast-list'
+            ], check=True)
 
     except Exception as e:
         print(f'エラー発生: {novel_url} → {e}')
         continue
-
-# 最終アップロード（10話未満の残りがある場合）
-if download_count % 10 != 0:
-    print(f'\n--- 残り分アップロード ---')
-    subprocess.run(['rclone', 'copy', '/tmp/narou_dl', 'drive:', '--transfers=4', '--checkers=8', '--fast-list'], check=True)
