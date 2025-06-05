@@ -113,16 +113,27 @@ def download_episode(episode_url, episode_title, novel_title, index):
         lang_path = os.path.join(base_path, lang)
         os.makedirs(lang_path, exist_ok=True)
 
-    # 日本語保存
     ja_path = os.path.join(base_path, "japanese", file_name)
     with open(ja_path, "w", encoding="utf-8") as f:
         f.write(f"{episode_title}\n\n{body}")
 
-    # 英語翻訳＆保存
     translated_body = translate_text(body)
     en_path = os.path.join(base_path, "english", file_name)
     with open(en_path, "w", encoding="utf-8") as f:
         f.write(f"{episode_title}\n\n{translated_body}")
+
+    return base_path  # 後でアップロード対象にするため返す
+
+
+def upload_to_drive(path):
+    try:
+        print(f"アップロード中: {path}")
+        subprocess.run([
+            'rclone', 'copy', path, f'drive:{os.path.basename(path)}',
+            '--transfers=4', '--checkers=8', '--fast-list'
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"アップロード失敗: {e}")
 
 
 def download_novels(urls, history):
@@ -134,6 +145,8 @@ def download_novels(urls, history):
 
             episode_links = get_episode_links(novel_url)
             download_from = history.get(novel_url, 0)
+            downloaded_count = 0
+            last_uploaded = download_from
 
             for i, (episode_url, episode_title) in enumerate(episode_links):
                 episode_number = i + 1
@@ -141,16 +154,25 @@ def download_novels(urls, history):
                     continue
 
                 print(f"{episode_number:03d}_{episode_title} downloading & translating...")
-                download_episode(episode_url, episode_title, novel_title, i)
+                base_path = download_episode(episode_url, episode_title, novel_title, i)
 
-                # 履歴を即時更新
+                # 履歴更新
                 history[novel_url] = episode_number
                 save_history(history)
+                downloaded_count += 1
 
-                # 300話ごとに休憩
+                # 10話ごとにアップロード
+                if (episode_number - last_uploaded) >= 10:
+                    upload_to_drive(base_path)
+                    last_uploaded = episode_number
+
                 if episode_number % 300 == 0:
-                    print(f"{episode_number}話ダウンロード完了。30秒の休憩を取ります...")
+                    print(f"{episode_number}話完了。30秒休憩...")
                     time.sleep(30)
+
+            # 最後にアップロードされていない分があれば
+            if downloaded_count > 0 and (history[novel_url] - last_uploaded) > 0:
+                upload_to_drive(base_path)
 
         except Exception as e:
             print(f"エラー発生: {novel_url} → {e}")
@@ -168,8 +190,3 @@ if __name__ == "__main__":
     history = load_history()
     download_novels(urls, history)
     save_history(history)
-
-    subprocess.run([
-        'rclone', 'copy', DOWNLOAD_DIR_BASE, 'drive:',
-        '--transfers=4', '--checkers=8', '--fast-list'
-    ], check=True)
