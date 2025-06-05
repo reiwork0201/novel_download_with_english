@@ -10,7 +10,6 @@ HISTORY_FILE = '小説家になろうダウンロード経歴.txt'
 LOCAL_HISTORY_PATH = f'/tmp/{HISTORY_FILE}'
 REMOTE_HISTORY_PATH = f'drive:{HISTORY_FILE}'
 
-# G4F クライアント（gpt-4o-mini）
 client = Client()
 
 def fetch_url(url):
@@ -58,7 +57,6 @@ def translate_text(japanese_text):
     except Exception as e:
         return f"[Translation failed: {e}]"
 
-# URL一覧の読み込み
 script_dir = os.path.dirname(__file__)
 url_file_path = os.path.join(script_dir, '小説家になろう.txt')
 with open(url_file_path, 'r', encoding='utf-8') as f:
@@ -66,13 +64,14 @@ with open(url_file_path, 'r', encoding='utf-8') as f:
 
 history = load_history()
 
+download_count = 0
+
 for novel_url in urls:
     try:
         print(f'\n--- 処理開始: {novel_url} ---')
         url = novel_url
         sublist = []
 
-        # ページ分割対応
         while True:
             res = fetch_url(url)
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -94,12 +93,12 @@ for novel_url in urls:
         new_max = download_from
 
         for i, sub in enumerate(sublist):
-            if i + 1 <= download_from:
+            file_index = i + 1
+            if file_index <= download_from:
                 continue
 
             sub_title = sub.text.strip()
             link = sub.get('href')
-            file_index = i + 1
             folder_num = ((file_index - 1) // 999) + 1
             folder_name = f'{folder_num:03d}'
             file_name = f'{file_index:03d}.txt'
@@ -128,14 +127,20 @@ for novel_url in urls:
 
             print(f'{file_name} saved in {folder_name} (japanese & english) ({file_index}/{sub_len})')
             new_max = file_index
+            history[novel_url] = new_max
+            save_history(history)  # 各話ごとに履歴保存
+            download_count += 1
 
-        history[novel_url] = new_max
+            # 10話ごとにアップロード
+            if download_count % 10 == 0:
+                print(f'\n--- 10話ごとにアップロード: {download_count}話完了 ---')
+                subprocess.run(['rclone', 'copy', '/tmp/narou_dl', 'drive:', '--transfers=4', '--checkers=8', '--fast-list'], check=True)
 
     except Exception as e:
         print(f'エラー発生: {novel_url} → {e}')
         continue
 
-save_history(history)
-
-# Google Driveにアップロード
-subprocess.run(['rclone', 'copy', '/tmp/narou_dl', 'drive:', '--transfers=4', '--checkers=8', '--fast-list'], check=True)
+# 最終アップロード（10話未満の残りがある場合）
+if download_count % 10 != 0:
+    print(f'\n--- 残り分アップロード ---')
+    subprocess.run(['rclone', 'copy', '/tmp/narou_dl', 'drive:', '--transfers=4', '--checkers=8', '--fast-list'], check=True)
