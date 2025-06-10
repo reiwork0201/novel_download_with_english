@@ -26,8 +26,8 @@ def translate_text(japanese_text):
                 "role": "system",
                 "content": (
                     "You are a professional translator specializing in Japanese fantasy novels. "
-                    "Translate the following passage into natural, expressive English that preserves the original tone, atmosphere, and character voices. "
-                    "Do NOT translate the title or include any headers. Output only the translated body."
+        "Translate the following passage into natural, expressive English that preserves the original tone, atmosphere, and character voices. "
+        "Remove any forewords or afterwords such as author notes, promotional content, or update logs. Output only the translated body."
                 )
             }, {
                 "role": "user",
